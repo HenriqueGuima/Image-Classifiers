@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score, confusion_matrix
+import seaborn as sns
 
 # CALIBRATION LIST OF FILES
 calibration_list_of_files = "ILSVRC2012_CalibrationSet.txt"
@@ -18,11 +19,11 @@ imagenet_labels = open(labels_path).read().splitlines()[1:]
 with open(calibration_list_of_files, 'r') as f:
     cal_files = [line.strip() for line in f]
 
-with open(calibration_groundtruth, 'r') as f:
+with open(calibration_groundtruth, 'r') as f:   
     cal_gt = [int(line.strip()) for line in f]
 
 # NUMBER OF IMAGES TO EVALUATE
-limit = None
+limit = 5
 
 # LIMIT IS OPTIONAL
 if limit is not None:
@@ -64,6 +65,8 @@ recalls = []
 fscores = []
 accuracies = []
 inference_times = []
+conf_matrices = []
+image_info = []
 
 # CYCLE TO EVALUATE EACH MODEL
 for model_name, model, image_res in models:
@@ -93,6 +96,7 @@ for model_name, model, image_res in models:
         predicted_class_name = imagenet_labels[predicted_class]
         gt_class_name = imagenet_labels[cal_gt[i]]
         img = tf.keras.preprocessing.image.load_img(image_path)
+        image_info.append((model_name, image_path, gt_class_name, cal_gt[i], predicted_class_name, predicted_class))
 
         # axes[i].imshow(img)
         # axes[i].axis('off')
@@ -117,6 +121,7 @@ for model_name, model, image_res in models:
     # CALCULATE METRICS
     precision, recall, fscore, _ = precision_recall_fscore_support(cal_gt, cal_pred, average='macro', zero_division=0)
     accuracy = accuracy_score(cal_gt, cal_pred)
+    conf_matrix = confusion_matrix(cal_gt, cal_pred)
 
     # STORE METRICS
     model_names.append(model_name)
@@ -125,6 +130,8 @@ for model_name, model, image_res in models:
     fscores.append(fscore)
     accuracies.append(accuracy)
     inference_times.append(fps)
+    conf_matrices.append(conf_matrix)
+
 
     # PRINT RESULTS
     print(f"Evaluation Results for {model_name} on ImageNet Calibration Set")
@@ -133,9 +140,9 @@ for model_name, model, image_res in models:
     print(f"F-Score: {fscore:.4f}")
     print(f"Accuracy: {accuracy:.4f}")
     print(f"Inference Frame Rate: {fps:.2f} fps\n")
-
+    
 # PLOT THE METRICS
-fig, ax = plt.subplots(2, 2, figsize=(15, 10))
+fig, ax = plt.subplots(2, 2, figsize=(20, 10))
 
 # PRECISION
 ax[0, 0].bar(model_names, precisions, color='blue')
@@ -157,5 +164,30 @@ ax[1, 1].bar(model_names, accuracies, color='purple')
 ax[1, 1].set_title('Accuracy')
 ax[1, 1].set_ylim([0, 1])
 
-# plt.tight_layout()
+# INFERENCE TIME
+# fig, ax = plt.subplots(figsize=(10, 5))
+# ax.bar(model_names, inference_times, color='orange')
+# ax.set_title('Inference Frame Rate (fps)')
+# ax.set_ylim([0, max(inference_times) + 10])
+
+plt.tight_layout()
+plt.show()
+
+# DISPLAY CONFUSION MATRICES
+grid_size = int(np.ceil(np.sqrt(len(model_names))))
+fig, axes = plt.subplots(grid_size, grid_size, figsize=(15, 15))
+
+for i, (model_name, conf_matrix) in enumerate(zip(model_names, conf_matrices)):
+    ax = axes[i // grid_size, i % grid_size]
+    sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', ax=ax)
+    ax.set_title(f'Confusion Matrix for {model_name}', fontsize=10)
+    ax.set_xlabel('Predicted', fontsize=8)
+    ax.set_ylabel('True', fontsize=8)
+    ax.tick_params(axis='both', labelsize=8)
+
+# HIDE UNUSED PLOTS
+for j in range(len(model_names), grid_size * grid_size):
+    axes[j // grid_size, j % grid_size].axis('off')
+
+plt.tight_layout(h_pad=10)
 plt.show()
